@@ -1,0 +1,69 @@
+name: TempMail
+options:
+  bundleIdPrefix: com.jalencode
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    GENERATE_INFOPLIST_FILE: YES
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    INFOPLIST_KEY_CFBundleDisplayName: Temp Mail
+    ENABLE_PREVIEWS: YES
+
+targets:
+  TempMail-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources/TempMail
+    settings:
+      base:
+        PRODUCT_NAME: TempMail
+        PRODUCT_BUNDLE_IDENTIFIER: com.jalencode.tempmail
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Sources/TempMail/Info-iOS.plist
+
+  TempMail-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources/TempMail
+    scheme:
+      testTargets:
+        - TempMailTests-macOS
+    settings:
+      base:
+        PRODUCT_NAME: TempMail
+        PRODUCT_BUNDLE_IDENTIFIER: com.jalencode.tempmail
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.productivity
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: ""
+
+  TempMailTests-macOS:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Sources/TempMailTests
+    dependencies:
+      - target: TempMail-macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jalencode.tempmail.tests
+        MACOSX_DEPLOYMENT_TARGET: "26.0"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/TempMail.app/Contents/MacOS/TempMail"
