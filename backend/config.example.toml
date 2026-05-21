@@ -1,0 +1,36 @@
+[server]
+listen = "0.0.0.0:8080"
+data_dir = "./data"
+public_base_url = "https://temp-mail.example.com"
+
+[auth]
+# Bearer token the Swift app uses to authenticate. Generate a long random string.
+api_token = "REPLACE_WITH_LONG_RANDOM_TOKEN"
+# Shared HMAC secret for the /v1/ingest webhook endpoint. Used to verify any
+# webhook-driven mail ingress (kept around for testing and as an escape hatch
+# if you ever put a webhook provider in front of the backend).
+ingest_hmac_secret = "REPLACE_WITH_LONG_RANDOM_SECRET"
+
+[mail]
+domain = "your-domain.com"
+# Maximum size of an accepted message, in bytes.
+max_message_bytes = 26214400
+# If true, accept mail to any *@domain. If false, only pre-created addresses.
+catch_all = true
+
+# SMTP receiver. Omit this section to disable. With a residential setup,
+# point your domain's MX record at the host running this and open inbound :25.
+[smtp]
+listen = "0.0.0.0:25"
+hostname = "mail.your-domain.com"
+
+# Optional STARTTLS (RFC 3207). When both paths are set, the server advertises
+# STARTTLS in EHLO and accepts encrypted sessions. Get a cert with Let's Encrypt
+# (certbot, lego, cert-manager, etc.) for the hostname above.
+# tls_cert = "/etc/letsencrypt/live/mail.your-domain.com/fullchain.pem"
+# tls_key  = "/etc/letsencrypt/live/mail.your-domain.com/privkey.pem"
+
+[resend]
+api_key = "re_REPLACE_ME"
+# Optional friendly name in the From: header when sending.
+default_from_name = "Temp Mail"
