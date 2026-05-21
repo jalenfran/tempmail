@@ -9,6 +9,10 @@ backend/Cargo.lock.bak
 # Local backend secrets
 backend/config.toml
 
+# Kubernetes secrets — api_token, HMAC, Resend key live in here
+manifests/*-secret.yaml
+manifests/*.secret.yaml
+
 # Xcode / iOS
 ios/TempMail.xcodeproj/
 ios/build/

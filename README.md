@@ -135,6 +135,62 @@ telnet your-public-ip 25
 
 The other gotcha is some senders (notably Gmail) will deliver but mark mail as spam if your IP is on residential blocklists. PTR + SPF + DKIM + DMARC alignment is what mostly fixes that.
 
+## Kubernetes / NixOS deployment
+
+The repo ships with a working deployment for a single-node k3s cluster on NixOS — that's how the maintainer runs it. The pieces:
+
+```
+backend/
+  Dockerfile          multi-stage Rust 1.86 build; runs as uid 1000
+manifests/
+  tempmail-final.yaml  Namespace + Deployment + NodePort Service
+  tempmail-secret.yaml config.toml as a k8s Secret (gitignored — see below)
+scripts/
+  deploy.sh           `docker build` → `k3s ctr images import` → kubectl apply
+```
+
+Plus three NixOS modules that live in the operator's separate `nixos-snowflake` repo:
+
+- `modules/nginx-proxy.nix` — adds `:80`/`:443` vhosts for `temp-mail.your-domain.com` (proxy to NodePort 30100, with `proxy_buffering off` on `/v1/events` for SSE) and a `:80`-only vhost for `mail.your-domain.com` (cert-only, no proxy).
+- `modules/certbot-issue.nix` — oneshot ordered `Before=nginx.service` that runs `certbot certonly --standalone` for any domain in `services.certbotIssue.domains` that doesn't yet have a cert. Idempotent.
+- `modules/tempmail-host.nix` — opens TCP/25 in the firewall, creates `/var/lib/tempmail{,/tls}` owned by uid 1000, and a `systemd.path` that watches `/etc/letsencrypt/live/mail.your-domain.com/fullchain.pem` and mirrors it into `/var/lib/tempmail/tls/{fullchain,key}.pem` (mode 0640, uid 1000) so the pod can read it for STARTTLS.
+
+Key design points:
+- **SQLite lives on local disk** via a `hostPath` mount on the master node, not NFS. SQLite WAL on NFS is a known footgun.
+- **Pod runs unprivileged** (uid 1000). To still bind `:25` externally, the container listens on `:1025` and the pod uses `hostPort: 25, containerPort: 1025` — kubelet sets up the forward.
+- **TLS is hand-rolled certbot**, not `security.acme` or cert-manager. The path watcher decouples cert issuance/renewal from the pod lifecycle.
+
+### Files to edit before deploying
+
+| File | What to change |
+|---|---|
+| `manifests/tempmail-secret.yaml` | `domain`, `hostname`, `public_base_url`; regenerate `api_token` and `ingest_hmac_secret` with `openssl rand -hex 32`; (optionally) paste your Resend key |
+| `manifests/tempmail-final.yaml` | `nodeSelector.kubernetes.io/hostname` to match your master node; `nodePort` if 30100 collides |
+| NixOS `modules/nginx-proxy.nix` | replace `temp-mail.jalencode.com` / `mail.jalencode.com` and the NodePort target |
+| NixOS `modules/tempmail-host.nix` | `certDomain` |
+| NixOS `hosts/<host>/configuration.nix` | add the imports and set `services.certbotIssue.domains` |
+
+### Bootstrap order (one-time)
+
+1. **DNS** (see "Going live" above for the full record list). Verify with `dig +short A mail.your-domain.com` from outside before touching NixOS.
+2. **Router**: forward TCP/25, 80, 443 to the master node's LAN IP.
+3. **NixOS**: `sudo nixos-rebuild switch --flake .#<host>`. `certbot-issue.service` runs first, issues both certs via `certbot --standalone`; `tempmail-cert-sync` mirrors `mail.*`'s cert into `/var/lib/tempmail/tls/`; nginx then starts cleanly.
+4. **Deploy**: `./scripts/deploy.sh`. Verify with `sudo kubectl -n tempmail logs deploy/tempmail` — you should see the HTTP and SMTP listeners come up and STARTTLS loaded.
+
+### Rotating the API token
+
+```bash
+# 1. Edit manifests/tempmail-secret.yaml — replace auth.api_token
+# 2. Apply + restart so the pod re-reads the Secret-mounted config.toml:
+sudo kubectl apply -f manifests/tempmail-secret.yaml
+sudo kubectl -n tempmail rollout restart deployment/tempmail
+# 3. Re-pair the iOS / macOS app with the new token.
+```
+
+### Adding a new public-facing domain (e.g. an alias)
+
+Edit `[mail].domain` in the Secret, add the matching MX record, re-apply + restart. No NixOS changes needed unless you want a second STARTTLS cert.
+
 ## Tests
 
 ```bash

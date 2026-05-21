@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tempmail
+
+---
+# Pinned to cluster1: SQLite + WAL on the master's local disk (not NFS).
+# /var/lib/tempmail must exist on cluster1 — created by the deploy script.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempmail
+  namespace: tempmail
+  labels:
+    app: tempmail
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tempmail
+  template:
+    metadata:
+      labels:
+        app: tempmail
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: cluster1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      volumes:
+        - name: data
+          hostPath:
+            path: /var/lib/tempmail
+            type: DirectoryOrCreate
+        - name: config
+          secret:
+            secretName: tempmail-config
+      containers:
+        - name: tempmail
+          image: tempmail:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: smtp
+              containerPort: 1025
+              hostPort: 25
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/tempmail
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
+---
+# Matches the vaultwarden pattern: NodePort for the HTTP API so the host
+# reverse proxy (or Cloudflare tunnel) can front it. SMTP isn't here — it's
+# exposed via hostPort on the pod, not via a Service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempmail-nodeport
+  namespace: tempmail
+spec:
+  type: NodePort
+  selector:
+    app: tempmail
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 30100

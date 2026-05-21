@@ -1,0 +1,7 @@
+target/
+data/
+config.toml
+.git/
+.gitignore
+Dockerfile
+.dockerignore
