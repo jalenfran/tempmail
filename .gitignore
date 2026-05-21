@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Rust
+backend/target/
+backend/data/
+backend/Cargo.lock.bak
+
+# Local backend secrets
+backend/config.toml
+
+# Xcode / iOS
+ios/TempMail.xcodeproj/
+ios/build/
+ios/DerivedData/
+xcuserdata/
+*.xcuserstate
+
+# Node / Worker
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+
+# Editor / OS noise
+*.log
+.idea/
+.vscode/
