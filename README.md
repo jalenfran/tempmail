@@ -149,16 +149,16 @@ scripts/
   deploy.sh           `docker build` → `k3s ctr images import` → kubectl apply
 ```
 
-Plus three NixOS modules that live in the operator's separate `nixos-snowflake` repo:
+Plus NixOS modules that live in the operator's separate `nixos-snowflake` repo:
 
-- `modules/nginx-proxy.nix` — adds `:80`/`:443` vhosts for `temp-mail.your-domain.com` (proxy to NodePort 30100, with `proxy_buffering off` on `/v1/events` for SSE) and a `:80`-only vhost for `mail.your-domain.com` (cert-only, no proxy).
-- `modules/certbot-issue.nix` — oneshot ordered `Before=nginx.service` that runs `certbot certonly --standalone` for any domain in `services.certbotIssue.domains` that doesn't yet have a cert. Idempotent.
-- `modules/tempmail-host.nix` — opens TCP/25 in the firewall, creates `/var/lib/tempmail{,/tls}` owned by uid 1000, and a `systemd.path` that watches `/etc/letsencrypt/live/mail.your-domain.com/fullchain.pem` and mirrors it into `/var/lib/tempmail/tls/{fullchain,key}.pem` (mode 0640, uid 1000) so the pod can read it for STARTTLS.
+- `modules/nginx-proxy.nix`: `:80`/`:443` vhosts for `temp-mail.your-domain.com` (proxy to NodePort 30100, with `proxy_buffering off` on `/v1/events` for SSE). `mail.your-domain.com` needs no vhost: it only has to resolve to the server for MX and carry a cert for STARTTLS.
+- `modules/acme-wildcard.nix`: one `*.your-domain.com` certificate from `security.acme`, issued over DNS-01, which also covers `mail.your-domain.com`.
+- `modules/tempmail-host.nix`: opens TCP/25, creates `/var/lib/tempmail{,/tls}` owned by uid 1000, and `tempmail-cert-sync`, which copies the certificate into `/var/lib/tempmail/tls/{fullchain,key}.pem` (mode 0640, uid 1000) and restarts the deployment when it changes. It runs on every rebuild and after every renewal.
 
 Key design points:
 - **SQLite lives on local disk** via a `hostPath` mount on the master node, not NFS. SQLite WAL on NFS is a known footgun.
 - **Pod runs unprivileged** (uid 1000). To still bind `:25` externally, the container listens on `:1025` and the pod uses `hostPort: 25, containerPort: 1025` — kubelet sets up the forward.
-- **TLS is hand-rolled certbot**, not `security.acme` or cert-manager. The path watcher decouples cert issuance/renewal from the pod lifecycle.
+- **The backend loads its TLS config once, at startup.** A renewed certificate on disk does nothing until the pod restarts, which is why `tempmail-cert-sync` restarts it. Without that, STARTTLS keeps presenting the old certificate until it expires.
 
 ### Files to edit before deploying
 
@@ -167,14 +167,14 @@ Key design points:
 | `manifests/tempmail-secret.yaml` | `domain`, `hostname`, `public_base_url`; regenerate `api_token` and `ingest_hmac_secret` with `openssl rand -hex 32`; (optionally) paste your Resend key |
 | `manifests/tempmail-final.yaml` | `nodeSelector.kubernetes.io/hostname` to match your master node; `nodePort` if 30100 collides |
 | NixOS `modules/nginx-proxy.nix` | replace `temp-mail.jalencode.com` / `mail.jalencode.com` and the NodePort target |
-| NixOS `modules/tempmail-host.nix` | `certDomain` |
-| NixOS `hosts/<host>/configuration.nix` | add the imports and set `services.certbotIssue.domains` |
+| NixOS `modules/tempmail-host.nix` | `certDir`, if your certificate lives elsewhere |
+| NixOS `hosts/<host>/configuration.nix` | add the imports |
 
 ### Bootstrap order (one-time)
 
 1. **DNS** (see "Going live" above for the full record list). Verify with `dig +short A mail.your-domain.com` from outside before touching NixOS.
-2. **Router**: forward TCP/25, 80, 443 to the master node's LAN IP.
-3. **NixOS**: `sudo nixos-rebuild switch --flake .#<host>`. `certbot-issue.service` runs first, issues both certs via `certbot --standalone`; `tempmail-cert-sync` mirrors `mail.*`'s cert into `/var/lib/tempmail/tls/`; nginx then starts cleanly.
+2. **Router**: forward TCP/25 and 443 (and 80, for the HTTPS redirect) to the master node's LAN IP.
+3. **NixOS**: `sudo nixos-rebuild switch --flake .#<host>`. The certificate is issued over DNS-01, so nothing has to be reachable yet; `tempmail-cert-sync` then copies it into `/var/lib/tempmail/tls/`.
 4. **Deploy**: `./scripts/deploy.sh`. Verify with `sudo kubectl -n tempmail logs deploy/tempmail` — you should see the HTTP and SMTP listeners come up and STARTTLS loaded.
 
 ### Rotating the API token

@@ -5,10 +5,10 @@
 # Bootstrap order (one-time, before the first deploy):
 #   1. DNS A records: temp-mail.jalencode.com and mail.jalencode.com → public IP.
 #      MX for jalencode.com → 10 mail.jalencode.com.
-#   2. Router: forward TCP/25, TCP/80, TCP/443 to cluster1's LAN IP.
+#   2. Router: forward TCP/25 and TCP/443 (and 80 for the redirect) to cluster1.
 #   3. sudo nixos-rebuild switch --flake .#cluster1
-#      certbot-issue.service auto-issues the two certs; tempmail-cert-sync
-#      mirrors mail.jalencode.com's cert into /var/lib/tempmail/tls/.
+#      The wildcard cert (acme-wildcard.nix) covers mail.jalencode.com, and
+#      tempmail-cert-sync copies it into /var/lib/tempmail/tls/.
 #   4. Run this script.
 
 set -euo pipefail
@@ -27,9 +27,9 @@ if ! sudo test -f "$CERT_DIR/fullchain.pem" || ! sudo test -f "$CERT_DIR/key.pem
 The tempmail SMTP listener will refuse to start without these because
 [smtp].tls_cert / tls_key are set in the Secret (config.toml).
 
-Fix:
-  sudo certbot certonly --webroot -w /var/lib/acme/acme-challenge -d mail.jalencode.com
-  sudo systemctl start tempmail-cert-sync
+Fix: check the certificate was issued, then copy it in:
+  journalctl -u acme-order-renew-jalencode.com -n 20
+  sudo systemctl restart tempmail-cert-sync
 
 Or, to deploy receive-only without STARTTLS, comment out tls_cert/tls_key
 in manifests/tempmail-secret.yaml and re-run.
