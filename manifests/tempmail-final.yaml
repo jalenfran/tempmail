@@ -42,7 +42,7 @@ spec:
             secretName: tempmail-config
       containers:
         - name: tempmail
-          image: tempmail:0.1.0
+          image: tempmail:0.1.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

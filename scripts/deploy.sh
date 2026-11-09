@@ -14,7 +14,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-IMAGE_TAG="tempmail:0.1.0"
+IMAGE_TAG="tempmail:0.1.1"
 CERT_DIR="/var/lib/tempmail/tls"
 
 echo "🔎 Cert preflight..."
